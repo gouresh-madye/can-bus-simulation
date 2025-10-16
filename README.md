@@ -35,16 +35,17 @@ A comprehensive intrusion detection system for Controller Area Network (CAN) bus
 
 ```
 MajorProject/
-├── generate_pcap.py          # PCAP generator for CAN traffic
 ├── packets/
-│   └── can_sim.pcap          # Generated CAN traffic capture
-├── suricata.yaml             # Suricata configuration
+│   └── can_sim.pcap              # Generated CAN traffic capture
+├── code/
+│   └── generate_pcap.py          # PCAP generator for CAN traffic
+│   └── visualize_fastlog.ipynb   # Jupyter notebook for visualization
+├── suricata.yaml                 # Suricata configuration
 ├── rules/
 │   └── can.rules             # Custom CAN detection rules
 ├── suricata_logs/            # Suricata output directory
 │   ├── fast.log              # Alert summary
 │   └── eve.json              # Detailed JSON logs
-├── visualize_fastlog.ipynb   # Jupyter notebook for visualization
 ├── requirements.txt          # Python dependencies
 ├── screenshots/              # Documentation screenshots
 │   ├── suricata_application.png
