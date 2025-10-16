@@ -1,0 +1,23 @@
+# CAN Bus Intrusion Detection Rules
+# Each rule monitors UDP packets (as used in your simulated PCAP) and detects specific CAN frame patterns.
+
+# Rule 1: Detect repeated CAN ID 0x100 pattern (possible spoofing/flood)
+alert udp any any -> any any (msg:"CAN Flood Detected - ID 0x100 pattern"; content:"|01 02 03 04 05 06 07 08|"; sid:1000001; rev:2;)
+
+# Rule 2: Detect anomaly from CAN ID 0x200 (unusual data pattern)
+alert udp any any -> any any (msg:"CAN Anomaly - ID 0x200 abnormal sequence"; content:"|FF FF 00 00 11 22 33 44|"; sid:1000002; rev:2;)
+
+# Rule 3: Detect all-zero data payload (possible ECU malfunction or DoS)
+alert udp any any -> any any (msg:"CAN DoS Suspicious - Zero Payload"; content:"|00 00 00 00 00 00 00 00|"; sid:1000003; rev:1;)
+
+# Rule 4: Detect all-FF payload (may indicate diagnostic request flood)
+alert udp any any -> any any (msg:"CAN Diagnostic Flood - FF Payload"; content:"|FF FF FF FF FF FF FF FF|"; sid:1000004; rev:1;)
+
+# Rule 5: Detect sudden control-type message (unauthorized command frame)
+alert udp any any -> any any (msg:"CAN Unauthorized Command - Control Frame"; content:"|AA BB CC DD|"; sid:1000005; rev:1;)
+
+# Rule 6: Detect unexpected CAN ID 0x7DF (OBD broadcast abuse)
+alert udp any any -> any any (msg:"CAN OBD Broadcast Abuse - ID 0x7DF Detected"; content:"|11 22 33 44 55 66 77 88|"; sid:1000006; rev:1;)
+
+# Rule 7: Detect unknown ECU traffic (IDs > 0x700 range)
+alert udp any any -> any any (msg:"CAN Unknown ECU ID (>0x700) Detected"; content:"|99 88 77 66 55 44 33 22|"; sid:1000007; rev:1;)
