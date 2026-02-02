@@ -2,11 +2,16 @@ import csv
 from scapy.all import *
 import binascii
 
-# Input CSV file (with headers: Timestamp, CAN_ID, DATA, DLC, SRC_IP, DST_IP)
-csv_file = "../inputdata/simulated_can_logs.csv"
+import os
 
-# Output PCAP file
-pcap_file = "../packets/can_sim.pcap"
+# Determine script location
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Input CSV file (relative to script location)
+csv_file = os.path.join(BASE_DIR, "../inputdata/simulated_can_logs.csv")
+
+# Output PCAP file (relative to script location)
+pcap_file = os.path.join(BASE_DIR, "../packets/can_sim.pcap")
 
 packets = []
 
