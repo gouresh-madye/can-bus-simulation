@@ -1,23 +1,184 @@
-# CAN Bus Intrusion Detection Rules
-# Each rule monitors UDP packets (as used in your simulated PCAP) and detects specific CAN frame patterns.
+# ============================================================================
+# CAN Bus Intrusion Detection Rules - Autonomous Vehicle Safety System
+# ============================================================================
+# These rules detect various CAN bus attacks and anomalies that could
+# compromise vehicle safety. Each rule is mapped to a threat class and
+# severity level used by the autonomous vehicle safety controller.
+#
+# Integration:
+#   - Rules feed alerts to Suricata eve.json
+#   - Safety controller parses eve.json (see safety_controller.py)
+#   - Threat class determines response (SLOW_DOWN, STOP, PULL_OVER, etc.)
+#   - Vehicle modules receive safety commands via CAN (0x500)
+# ============================================================================
 
-# Rule 1: Detect repeated CAN ID 0x100 pattern (possible spoofing/flood)
-alert udp any any -> any any (msg:"CAN Flood Detected - ID 0x100 pattern"; content:"|01 02 03 04 05 06 07 08|"; sid:1000001; rev:2;)
+# ============================================================================
+# THREAT CLASS 1: CAN MESSAGE FLOODING (Denial of Service)
+# Severity: 15 points
+# Action: Monitor initially, escalate to SLOW_DOWN if frequency increases
+# ============================================================================
 
-# Rule 2: Detect anomaly from CAN ID 0x200 (unusual data pattern)
-alert udp any any -> any any (msg:"CAN Anomaly - ID 0x200 abnormal sequence"; content:"|FF FF 00 00 11 22 33 44|"; sid:1000002; rev:2;)
+# Rule 1: Detect repeated CAN ID 0x100 (Brake) flooding
+# Payload: |01 02 03 04 05 06 07 08|
+# Implication: Attacker attempting to overwhelm brake controller
+alert udp any any -> any any (
+    msg:"CAN Flood Detected - Brake Module (0x100)";
+    content:"|01 02 03 04 05 06 07 08|";
+    detection_filter:track by_src,count 10,seconds 1;
+    sid:1000001;
+    rev:3;
+)
 
-# Rule 3: Detect all-zero data payload (possible ECU malfunction or DoS)
-alert udp any any -> any any (msg:"CAN DoS Suspicious - Zero Payload"; content:"|00 00 00 00 00 00 00 00|"; sid:1000003; rev:1;)
+# ============================================================================
+# THREAT CLASS 2: ANOMALOUS PAYLOAD PATTERNS (Payload Injection)
+# Severity: 20 points
+# Action: Validate sensor data, may trigger SLOW_DOWN if persistent
+# ============================================================================
 
-# Rule 4: Detect all-FF payload (may indicate diagnostic request flood)
-alert udp any any -> any any (msg:"CAN Diagnostic Flood - FF Payload"; content:"|FF FF FF FF FF FF FF FF|"; sid:1000004; rev:1;)
+# Rule 2: Detect anomaly from CAN ID 0x200 (Throttle) - unusual sequence
+# Payload: |FF FF 00 00 11 22 33 44| (max throttle with zero accel is impossible)
+# Implication: Payload corruption or injection attack
+alert udp any any -> any any (
+    msg:"CAN Anomaly - Throttle Module (0x200) abnormal sequence";
+    content:"|FF FF 00 00 11 22 33 44|";
+    sid:1000002;
+    rev:3;
+)
+
+# ============================================================================
+# THREAT CLASS 3: SENSOR FAILURE / DoS ATTACK (Zero Payload)
+# Severity: 25 points
+# Action: Trigger STOP maneuver - sensor failure is safety-critical
+# ============================================================================
+
+# Rule 3: Detect all-zero data payload
+# Payload: |00 00 00 00 00 00 00 00|
+# Implication: ECU malfunction, sensor failure, or malicious disabling
+# Impact: Vehicle cannot receive valid control signals
+alert udp any any -> any any (
+    msg:"CAN DoS Suspicious - Zero Payload (Sensor Failure)";
+    content:"|00 00 00 00 00 00 00 00|";
+    sid:1000003;
+    rev:2;
+)
+
+# ============================================================================
+# THREAT CLASS 4: DIAGNOSTIC ABUSE (Firmware/Bootloader Manipulation)
+# Severity: 10 points (lower priority - monitoring only)
+# Action: Log event, increase monitoring, disable remote updates
+# ============================================================================
+
+# Rule 4: Detect all-FF payload (diagnostic mode flooding)
+# Payload: |FF FF FF FF FF FF FF FF|
+# Implication: Potential attempt to trigger diagnostic/bootloader mode
+# Risk: Could allow firmware manipulation
+alert udp any any -> any any (
+    msg:"CAN Diagnostic Flood - FF Payload (Bootloader Risk)";
+    content:"|FF FF FF FF FF FF FF FF|";
+    sid:1000004;
+    rev:2;
+)
+
+# ============================================================================
+# THREAT CLASS 5: UNAUTHORIZED COMMANDS (Injection Attack)
+# Severity: 20 points
+# Action: Suppress invalid commands, trigger SLOW_DOWN
+# ============================================================================
 
 # Rule 5: Detect sudden control-type message (unauthorized command frame)
-alert udp any any -> any any (msg:"CAN Unauthorized Command - Control Frame"; content:"|AA BB CC DD|"; sid:1000005; rev:1;)
+# Payload: |AA BB CC DD ...|
+# Implication: Invalid/spoofed command frame attempting to control vehicle
+# Impact: Could cause unintended brake/throttle/steering changes
+alert udp any any -> any any (
+    msg:"CAN Unauthorized Command - Control Frame (0x500)";
+    content:"|AA BB CC DD|";
+    sid:1000005;
+    rev:2;
+)
 
-# Rule 6: Detect unexpected CAN ID 0x7DF (OBD broadcast abuse)
-alert udp any any -> any any (msg:"CAN OBD Broadcast Abuse - ID 0x7DF Detected"; content:"|11 22 33 44 55 66 77 88|"; sid:1000006; rev:1;)
+# ============================================================================
+# THREAT CLASS 6: OBD-II / DIAGNOSTIC PORT ABUSE
+# Severity: 15 points
+# Action: Monitor, restrict diagnostic access
+# ============================================================================
 
-# Rule 7: Detect unknown ECU traffic (IDs > 0x700 range)
-alert udp any any -> any any (msg:"CAN Unknown ECU ID (>0x700) Detected"; content:"|99 88 77 66 55 44 33 22|"; sid:1000007; rev:1;)
+# Rule 6: Detect unexpected CAN ID 0x7DF (OBD broadcast)
+# Payload: |11 22 33 44 55 66 77 88|
+# Implication: Unauthorized OBD diagnostic queries (potential system probing)
+# Risk: Gateway to deeper vehicle systems
+alert udp any any -> any any (
+    msg:"CAN OBD Broadcast Abuse - Diagnostic Port (0x7DF)";
+    content:"|11 22 33 44 55 66 77 88|";
+    sid:1000006;
+    rev:2;
+)
+
+# ============================================================================
+# THREAT CLASS 7: UNKNOWN/UNAUTHORIZED ECU DETECTED (Critical)
+# Severity: 30 points (CRITICAL - trigger FULL_STOP)
+# Action: Isolate immediately, trigger emergency stop
+# ============================================================================
+
+# Rule 7: Detect unknown ECU traffic (CAN IDs > 0x700)
+# Payload: |99 88 77 66 55 44 33 22|
+# Implication: Unauthorized hardware or ECU installed on vehicle
+# Impact: Complete loss of trust in vehicle control systems
+alert udp any any -> any any (
+    msg:"CAN Unknown ECU ID (>0x700) Detected - CRITICAL";
+    content:"|99 88 77 66 55 44 33 22|";
+    sid:1000007;
+    rev:2;
+)
+
+# ============================================================================
+# SUPPLEMENTARY SAFETY RULES
+# ============================================================================
+
+# Rule 8: Detect rapid steering angle changes (vehicle instability)
+# Implication: Could indicate roll-over risk or loss of vehicle control
+alert udp any any -> any any (
+    msg:"CAN Safety - Rapid Steering Changes (Instability Risk)";
+    content:"|FF D8 01 3C|";  # -40° steering + high steering rate
+    sid:1000008;
+    rev:1;
+)
+
+# Rule 9: Detect simultaneous max brake + max throttle (physical impossibility)
+# Implication: Coordinated multi-module attack
+# Action: Trigger EMERGENCY STOP
+alert udp any any -> any any (
+    msg:"CAN Safety - Conflicting Control Commands (Multi-Module Attack)";
+    content:"|7F|";  # Max brake signal
+    pcre:"/FF.*FF/";  # Max throttle pattern following
+    sid:1000009;
+    rev:1;
+)
+
+# Rule 10: Detect brake pressure exceeding safe limits
+# Implication: Forced hard braking could cause loss of control
+alert udp any any -> any any (
+    msg:"CAN Safety - Excessive Brake Pressure (>95%)";
+    content:"|F2|";  # 242+ (>95%)
+    sid:1000010;
+    rev:1;
+)
+
+# ============================================================================
+# RULE INTEGRATION NOTES
+#
+# Each rule corresponds to a ThreatClass in safety_controller.py:
+#
+#   Rule ID     Class               Severity    Action
+#   ─────────────────────────────────────────────────────────
+#   1000001     CAN_FLOOD           15          SLOW_DOWN (if freq >10/s)
+#   1000002     ANOMALY_PATTERN     20          VALIDATE → SLOW_DOWN
+#   1000003     DOS_ZERO_PAYLOAD    25          STOP (critical)
+#   1000004     DIAGNOSTIC_FLOOD    10          Monitor, log
+#   1000005     UNAUTHORIZED_CMD    20          SUPPRESS → SLOW_DOWN
+#   1000006     OBD_ABUSE           15          Restrict access
+#   1000007     UNKNOWN_ECU         30          FULL_STOP (critical)
+#   1000008     STEERING_ANOMALY    20          Monitor, SLOW_DOWN
+#   1000009     MULTI_MODULE_CONF   35          EMERGENCY STOP
+#   1000010     BRAKE_EXTREME       15          Monitor, STOP if persistent
+#
+# ============================================================================
