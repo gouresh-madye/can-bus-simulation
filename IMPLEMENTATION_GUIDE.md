@@ -97,10 +97,10 @@ python generate_pcap.py
 
 ```bash
 # Run Suricata on PCAP
-suricata -c ../suricata.yaml -r ../packets/can_sim.pcap -e ../suricata_logs/
+suricata -c suricata.yaml -r packets/can_sim.pcap -l suricata_logs/ -s rules/can.rules
 
 # Verify eve.json was generated
-ls ../suricata_logs/eve.json
+ls suricata_logs/eve.json
 ```
 
 ### Step 4: Test Safety Controller
@@ -183,7 +183,7 @@ for i in range(15):
         payload=payload,
         timestamp=time.time() + i*0.01
     )
-    
+
     result = vehicle.process_can_message(msg)
     print(f"Iteration {i}: Threat score = {result['current_threat_score']}, "
           f"State = {result['current_safety_state']}")
@@ -567,11 +567,11 @@ def detect_custom_threat(self, can_id: int, payload: bytes) -> Tuple[bool, str]:
     if can_id == ModuleID.THROTTLE.value:
         throttle_now = payload[0]
         throttle_prev = self.throttle_state.throttle_pos
-        
+
         delta = abs(throttle_now - throttle_prev)
         if delta > 200:  # >78% change in one message
             return True, "Rapid throttle change detected"
-    
+
     return False, ""
 ```
 
@@ -582,6 +582,7 @@ def detect_custom_threat(self, can_id: int, payload: bytes) -> Tuple[bool, str]:
 ### Issue 1: "File not found: suricata_logs/eve.json"
 
 **Solution**:
+
 1. Ensure Suricata has been run: `suricata -c suricata.yaml -r packets/can_sim.pcap -l suricata_logs/`
 2. Verify eve.json exists: `ls suricata_logs/eve.json`
 3. Check file permissions
@@ -589,6 +590,7 @@ def detect_custom_threat(self, can_id: int, payload: bytes) -> Tuple[bool, str]:
 ### Issue 2: No alerts being processed
 
 **Solution**:
+
 1. Verify eve.json is not empty: `wc -l suricata_logs/eve.json`
 2. Check eve.json format (should be valid JSON lines)
 3. Ensure Suricata rules file (rules/can.rules) is referenced in suricata.yaml
@@ -596,6 +598,7 @@ def detect_custom_threat(self, can_id: int, payload: bytes) -> Tuple[bool, str]:
 ### Issue 3: Maneuvers not executing
 
 **Solution**:
+
 1. Check threat score: `print(vehicle.threat_score)`
 2. Verify safety state: `print(vehicle.safety_state.name)`
 3. Check maneuver cooldown: `time.time() - safety_controller.last_maneuver_time < 2.0`
@@ -603,6 +606,7 @@ def detect_custom_threat(self, can_id: int, payload: bytes) -> Tuple[bool, str]:
 ### Issue 4: Inconsistent threat scores
 
 **Solution**:
+
 1. Review threat history: `vehicle.threat_history[-10:]`
 2. Check time decay in `calculate_threat_score()`
 3. Verify alert queue processing: `print(safety_controller.alert_queue)`
@@ -616,4 +620,3 @@ def detect_custom_threat(self, can_id: int, payload: bytes) -> Tuple[bool, str]:
 3. **Machine Learning**: Add anomaly detection using neural networks
 4. **Hardware Integration**: Interface with actual CAN Bus hardware (CAN-USB adapters)
 5. **Redundancy**: Add secondary controller for fail-safe operation
-

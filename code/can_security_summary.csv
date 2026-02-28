@@ -1,0 +1,9 @@
+Metric,Value
+Total Alerts,20
+CAN DoS Alerts,10
+CAN Diagnostic Flood Alerts,10
+Unique Source IPs,2
+Unique Destination IPs,1
+Total Duration (ms),2.93
+Average Alerts per ms,6.84
+Source Port Range,5200.0 - 5219.0

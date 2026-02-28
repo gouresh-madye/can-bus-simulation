@@ -1,0 +1,21 @@
+timestamp,src_ip,src_port,dest_ip,dest_port,signature,severity,elapsed_ms
+2026-02-04 16:30:41.657989+05:30,192.168.0.4,5200.0,192.168.0.10,6000.0,CAN DoS Suspicious - Zero Payload (Sensor Failure),3,0.0
+2026-02-04 16:30:41.658149+05:30,192.168.0.4,5201.0,192.168.0.10,6000.0,CAN DoS Suspicious - Zero Payload (Sensor Failure),3,0.16
+2026-02-04 16:30:41.658300+05:30,192.168.0.4,5202.0,192.168.0.10,6000.0,CAN DoS Suspicious - Zero Payload (Sensor Failure),3,0.311
+2026-02-04 16:30:41.658450+05:30,192.168.0.4,5203.0,192.168.0.10,6000.0,CAN DoS Suspicious - Zero Payload (Sensor Failure),3,0.46099999999999997
+2026-02-04 16:30:41.658602+05:30,192.168.0.4,5204.0,192.168.0.10,6000.0,CAN DoS Suspicious - Zero Payload (Sensor Failure),3,0.6130000000000001
+2026-02-04 16:30:41.658758+05:30,192.168.0.4,5205.0,192.168.0.10,6000.0,CAN DoS Suspicious - Zero Payload (Sensor Failure),3,0.769
+2026-02-04 16:30:41.658914+05:30,192.168.0.4,5206.0,192.168.0.10,6000.0,CAN DoS Suspicious - Zero Payload (Sensor Failure),3,0.925
+2026-02-04 16:30:41.659070+05:30,192.168.0.4,5207.0,192.168.0.10,6000.0,CAN DoS Suspicious - Zero Payload (Sensor Failure),3,1.081
+2026-02-04 16:30:41.659222+05:30,192.168.0.4,5208.0,192.168.0.10,6000.0,CAN DoS Suspicious - Zero Payload (Sensor Failure),3,1.2329999999999999
+2026-02-04 16:30:41.659374+05:30,192.168.0.4,5209.0,192.168.0.10,6000.0,CAN DoS Suspicious - Zero Payload (Sensor Failure),3,1.385
+2026-02-04 16:30:41.659525+05:30,192.168.0.2,5210.0,192.168.0.10,6000.0,CAN Diagnostic Flood - FF Payload (Bootloader Risk),3,1.536
+2026-02-04 16:30:41.659681+05:30,192.168.0.2,5211.0,192.168.0.10,6000.0,CAN Diagnostic Flood - FF Payload (Bootloader Risk),3,1.692
+2026-02-04 16:30:41.659834+05:30,192.168.0.2,5212.0,192.168.0.10,6000.0,CAN Diagnostic Flood - FF Payload (Bootloader Risk),3,1.845
+2026-02-04 16:30:41.659985+05:30,192.168.0.2,5213.0,192.168.0.10,6000.0,CAN Diagnostic Flood - FF Payload (Bootloader Risk),3,1.996
+2026-02-04 16:30:41.660140+05:30,192.168.0.2,5214.0,192.168.0.10,6000.0,CAN Diagnostic Flood - FF Payload (Bootloader Risk),3,2.1510000000000002
+2026-02-04 16:30:41.660292+05:30,192.168.0.2,5215.0,192.168.0.10,6000.0,CAN Diagnostic Flood - FF Payload (Bootloader Risk),3,2.303
+2026-02-04 16:30:41.660448+05:30,192.168.0.2,5216.0,192.168.0.10,6000.0,CAN Diagnostic Flood - FF Payload (Bootloader Risk),3,2.4589999999999996
+2026-02-04 16:30:41.660598+05:30,192.168.0.2,5217.0,192.168.0.10,6000.0,CAN Diagnostic Flood - FF Payload (Bootloader Risk),3,2.609
+2026-02-04 16:30:41.660753+05:30,192.168.0.2,5218.0,192.168.0.10,6000.0,CAN Diagnostic Flood - FF Payload (Bootloader Risk),3,2.764
+2026-02-04 16:30:41.660915+05:30,192.168.0.2,5219.0,192.168.0.10,6000.0,CAN Diagnostic Flood - FF Payload (Bootloader Risk),3,2.926

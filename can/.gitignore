@@ -1,0 +1,16 @@
+# Virtual environments
+venv/
+.venv/
+__pycache__/
+
+# Large dataset files (>100MB) - use Git LFS or download separately
+dataset/DoS_dataset.csv
+dataset/Fuzzy_dataset.csv
+dataset/RPM_dataset.csv
+dataset/gear_dataset.csv
+
+# Model outputs (can be regenerated)
+outputs/*.npy
+
+# OS files
+.DS_Store
