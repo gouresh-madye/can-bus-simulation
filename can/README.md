@@ -59,149 +59,155 @@ SimpleNN: Fully Connected Neural Network
 
 ### Stateful Feature Vector (19 features)
 
-| Feature         | Description                              |
-| --------------- | ---------------------------------------- |
-| arb_id          | Arbitration ID                           |
-| dlc             | Data Length Code                         |
-| byte_0..byte_7  | 8 normalized data bytes (0-1)            |
-| delta_t_id      | Time since last frame with same ID (ms)  |
-| delta_t_global  | Time since last frame globally (ms)      |
-| count_id_window | Count of same ID in 200ms sliding window |
-| ratio_id_total  | Ratio of this ID to total frames         |
-| ema[id]         | Exponential moving average of delta_t_id |
-| var[id]         | Moving variance of delta_t_id            |
-| sum_bytes       | Sum of all data bytes                    |
-| mean_bytes      | Mean of data bytes                       |
-| var_bytes       | Variance of data bytes                   |
+| Feature | Description    |
+| ------- | -------------- |
+| arb_id  | Arbitration ID |
 
-### Why This Architecture Works Well
+## 1. Model Architecture
 
-| Aspect                               | Rationale                                                           |
-| ------------------------------------ | ------------------------------------------------------------------- |
-| **Simple MLP**                       | CAN frames are low-dimensional (18 features); no need for CNNs/RNNs |
-| **High Dropout (50%)**               | Prevents overfitting on limited attack patterns                     |
-| **CrossEntropyLoss + class weights** | Handles any remaining class imbalance                               |
-| **Adam optimizer (lr=0.001)**        | Fast convergence with adaptive learning                             |
-| **StandardScaler normalization**     | Features on same scale for stable gradients                         |
+The core of the IDS pipeline is a **Feed-Forward Neural Network (MLP)** implemented in PyTorch, saved as `best_model.pt`.
 
-## Evaluation Results
+**Architecture:** `SimpleNN` (Fully Connected)
+
+- **Input Layer:** 19 neurons (Stateful features)
+- **Hidden Layers:**
+  - Dense(128) + ReLU + Dropout(0.5)
+  - Dense(64) + ReLU + Dropout(0.5)
+  - Dense(32) + ReLU + Dropout(0.3)
+- **Output Layer:** 5 neurons (Softmax classification)
+
+### Why This Model Was Selected
+
+- **Ultra-Low Latency:** Inference time is **< 0.05 ms** per frame, which is critical for CAN bus traffic (~2000-5000 frames/sec). Complex models like LSTMs or Transformers would introduce unacceptable delays (>10ms) that could impede real-time blocking (IPS).
+- **Lightweight:** The model has ~10k parameters (< 100 KB), making it deployable on resource-constrained automotive ECUs or Raspberry Pi devices.
+- **Stateful Feature Engineering:** Instead of using recurrent networks (RNN/LSTM) to learn time dependencies (which is computationally expensive), we engineered _stateful temporal features_ (e.g., `delta_t`, `moving_variance`) into the input vector. This allows a fast MLP to detect temporal anomalies like DoS or Replay attacks without maintaining hidden states during inference.
+
+### Why Not Other Models?
+
+- **CNNs (Convolutional Neural Networks):** Designed for spatial data (images). While 1D-CNNs can process time-series, they require buffering multiple frames, adding latency.
+- **LSTMs/RNNs:** Great for sequences but computationally heavy for microcontrollers. Inference can be 100x slower than MLPs.
+- **SVM / Random Forest:** Good accuracy, but storage grows with dataset size (SVM support vectors) or tree depth. Neural networks scale better and allow easier "transfer learning" updates.
+
+### Deployment Considerations
+
+- **Real-Time Requirement:** CAN frames arrive every ~0.5ms. The IDS must classify a frame before the next one arrives to effectively block it. Our model's **0.05ms** latency meets this hard real-time constraint.
+- **Hardware:** optimized for ARM Cortex-M or Raspberry Pi (CPU inference).
+
+---
+
+## 2. Attack Types
+
+The system simulates and detects four major CAN bus attacks:
+
+### 1. DoS Attack (Denial of Service)
+
+- **Description:** Flooding the CAN bus with high-priority messages (ID `0x000`).
+- **Mechanism:** CAN protocol uses arbitration based on ID (lower ID = higher priority). Sending `0x000` continuously wins arbitration, preventing all other ECUs from transmitting.
+- **Simulation:** Injecting `0x000` frames at 0.5ms intervals.
+- **Danger:** Complete paralysis of vehicle communication. Engine, brakes, and steering ECUs cannot exchange critical data.
+
+### 2. Fuzzy Attack (Fuzzing)
+
+- **Description:** Injection of random CAN IDs and random payloads.
+- **Mechanism:** Exploits vulnerabilities in ECU parsing logic. Random data can trigger edge cases, buffer overflows, or unexpected diagnostic modes.
+- **Simulation:** Randomly generating IDs (0x000-0x7FF) and data bytes.
+- **Danger:** Can cause ECUs to crash, reset, or behave unpredictably (e.g., wipers turning on, doors unlocking).
+
+### 3. RPM Spoofing
+
+- **Description:** Injecting false Engine RPM values on ID `0x316`.
+- **Mechanism:** The attacker sends regular frames with ID `0x316` but malicious payload data (e.g., indicating 8000 RPM). The receiving ECU (Dashboard/Transmission) sees two conflicting values (real vs. fake) or accepts the fake one if sent at higher frequency.
+- **Simulation:** Overwriting byte values corresponding to RPM to show dangerous spikes or fluctuations.
+- **Danger:** Driver panic (false redline), transmission errors (refusing to downshift), or cruise control malfunction.
+
+### 4. Gear Spoofing
+
+- **Description:** Injecting false Gear position data on ID `0x43F`.
+- **Mechanism:** Broadcasting invalid gear states (e.g., shifting Reverse -> Drive at highway speeds) or incorrect status.
+- **Simulation:** Rapidly cycling disparate gear values.
+- **Danger:** Transmission damage if the ECU actuates based on false data; Safety systems (like backup camera) engaging at wrong times.
+
+---
+
+## 3. ADAS Architecture Impact
+
+How these attacks compromise the Advanced Driver Assistance Systems (ADAS):
+
+| Attack Type       | Affected Layer           | Impact on Vehicle                                                                                                                                                                            |
+| :---------------- | :----------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **DoS**           | **Communication Layer**  | **Catastrophic.** Jams the backbone. Radar/Camera cannot send object data to the ADAS Control Unit. Automatic Emergency Braking (AEB) and Lane Keep Assist (LKA) fail silently or disengage. |
+| **Fuzzy**         | **ECU Processing Layer** | **Unpredictable.** Can crash the ADAS sensor nodes or the Gateway ECU. Might trigger sporadic false positives in collision warning systems.                                                  |
+| **RPM Spoofing**  | **Control Systems**      | **Operational.** Adaptive Cruise Control (ACC) relies on Engine speed. False high RPM causes ACC to disengage or behave erratically (unexpected acceleration/braking).                       |
+| **Gear Spoofing** | **Powertrain Control**   | **Safety Critical.** Automated Parking Assist requires precise gear status. Spoofing 'Drive' while in 'Reverse' could cause collisions during auto-parking maneuvers.                        |
+
+---
+
+## 4. How Our IDS Detects These Attacks
+
+The detection pipeline relies on the **stateful feature extractor** feeding the Neural Network:
+
+### DoS Detection
+
+- **Feature:** `delta_t_id` (Time since last ID) and `count_id_window` (Frequency).
+- **Logic:** DoS frames appear with `delta_t ≈ 0` and massive spikes in `count_id_window` for ID `0x000`. The model learns this "high frequency" signature.
+
+### Fuzzy Detection
+
+- **Feature:** `delta_t_global` and `var_bytes` (Variance of data).
+- **Logic:** Fuzzing introduces IDs never seen before or seen rarely (`ratio_id_total` anomaly). High variance in payload bytes (`var_bytes`) indicates non-physical random noise compared to smooth physical signals.
+
+### RPM / Gear Spoofing Detection
+
+- **Feature:** `byte_stats` and `delta_t_id`.
+- **Logic:**
+  - **Timing:** Spoofing often involves "injection" (adding frames), which disrupts the regular periodicity (`delta_t_id`) of the legitimate ECU.
+  - **Value:** Physical values (RPM) change smoothly due to inertia. A jump from 1000 -> 6000 RPM in 0.01s is physically impossible. The model learns these physical bounds via the data patterns.
+
+---
+
+## 5. How the System Helps ADAS Security
+
+This IDS/IPS solution provides defense-in-depth for autonomous and connected vehicles:
+
+1.  **Gatekeeper Role:** By sitting on the Gateway ECU, it filters malicious messages before they traverse from the OBD-II port (common attack vector) to critical powertrain/ADAS buses.
+2.  **Latency-Critical Protection:** with <0.05ms reaction time, it can invalidate a malicious message (via Error Frames) _before_ the victim ECU processes it (Intrusion Prevention).
+3.  **Anomaly Awareness:** Unlike rule-based systems (firewalls) that only block known bad IDs, this ML approach detects _behavioral_ anomalies, catching novel zero-day attacks that use legitimate IDs (spoofing).
+
+---
+
+## 6. Evaluation Results
+
+The model has been rigorously evaluated on a test set of 18,000 frames (20% split).
 
 ### Overall Metrics
 
-| Metric                  | Value          |
-| ----------------------- | -------------- |
-| **Overall Accuracy**    | 99.97%         |
-| **ROC-AUC**             | 0.9999         |
-| **PR-AUC**              | 1.0000         |
-| **False Positive Rate** | 0.04%          |
-| **Throughput**          | ~1M frames/sec |
+| Metric                  | Value        | Target | Status  |
+| :---------------------- | :----------- | :----- | :------ |
+| **Accuracy**            | **99.73%**   | > 95%  | ✅ PASS |
+| **ROC-AUC**             | **0.9998**   | > 0.95 | ✅ PASS |
+| **PR-AUC**              | **0.9998**   | > 0.95 | ✅ PASS |
+| **False Positive Rate** | **0.15%**    | < 5%   | ✅ PASS |
+| **Inference Time**      | **0.049 ms** | < 5 ms | ✅ PASS |
 
-### Per-Class Performance
+### Visualizations
 
-| Class         | Precision | Recall | F1-Score |
-| ------------- | --------- | ------ | -------- |
-| normal        | 1.00      | 0.99   | 1.00     |
-| DoS           | 1.00      | 1.00   | 1.00     |
-| fuzzing       | 1.00      | 1.00   | 1.00     |
-| rpm_spoofing  | 1.00      | 1.00   | 1.00     |
-| gear_spoofing | 1.00      | 1.00   | 1.00     |
+#### Performance Summary
 
-### Confusion Matrix
+![Evaluation Summary](outputs/evaluation_summary.png)
 
-```
-              normal  DoS  fuzzing  rpm_spoof  gear_spoof
-normal         1988    0      10        0          2
-DoS               0 2000       0        0          0
-fuzzing           3    0    1997        0          0
-rpm_spoofing      0    0       0     2000          0
-gear_spoofing     0    0       0        0       2000
-```
+#### Confusion Matrix & Latency
 
-## Latency Analysis
+![Evaluation Plots](outputs/evaluation_plots.png)
 
-### Inference Latency
+The confusion matrix shows near-perfect classification, with only minor confusion between Fuzzing and Normal traffic (0.07%). The latency distribution confirms all inferences occur well below the 5ms real-time deadline.
 
-| Metric                        | Value                         |
-| ----------------------------- | ----------------------------- |
-| **Average latency per frame** | < 0.001 ms (sub-microsecond)  |
-| **Throughput**                | ~1,000,000 frames/sec         |
-| **CAN bus max rate**          | ~10,000 frames/sec (500 kbps) |
-| **Latency overhead**          | < 0.01% of frame interval     |
+#### ROC Curves (One-vs-Rest)
 
-The model processes frames **100x faster** than the CAN bus can transmit them, ensuring zero bottleneck in real-time detection.
+![ROC Curves](outputs/multiclass_roc.png)
 
-### Why Real-Time Performance Matters for CAN
+All classes achieve an AUC close to 1.0, indicating excellent separability between normal traffic and specific attack vectors.
 
-- CAN bus operates at 500 kbps with frames every ~0.1ms
-- Attack detection must complete within the inter-frame interval
-- Our model's sub-microsecond latency ensures detection before the next frame arrives
-
-## Why This Model Outperforms Suricata for CAN Bus IDS
-
-### Architectural Comparison
-
-| Aspect                 | Suricata                  | This ML Model                |
-| ---------------------- | ------------------------- | ---------------------------- |
-| **Design Target**      | Ethernet/IP networks      | CAN bus specific             |
-| **Detection Method**   | Signature-based rules     | ML-based pattern recognition |
-| **Protocol Support**   | TCP/IP, HTTP, TLS, etc.   | Native CAN frame format      |
-| **Latency**            | ~100-500 μs per packet    | < 1 μs per frame             |
-| **Memory Footprint**   | ~500 MB - 2 GB            | < 10 MB                      |
-| **Zero-Day Detection** | Limited (needs signature) | Yes (anomaly detection)      |
-
-### Key Advantages Over Suricata
-
-#### 1. **CAN Protocol Native Support**
-
-- Suricata requires custom plugins/parsers for CAN frames
-- Our model directly processes CAN frame structure (ID, DLC, data bytes)
-- No protocol translation overhead
-
-#### 2. **Ultra-Low Latency**
-
-- Suricata: Designed for Ethernet with acceptable ~100-500 μs latency
-- This model: Sub-microsecond inference critical for automotive safety
-- CAN buses require responses within ~100 μs for safety-critical systems
-
-#### 3. **Resource Efficiency**
-
-- Suricata requires significant CPU/memory for rule matching
-- Our lightweight MLP runs efficiently on embedded automotive ECUs
-- Suitable for resource-constrained in-vehicle deployments
-
-#### 4. **Attack Generalization**
-
-- Suricata: Only detects attacks matching predefined signatures
-- ML model: Learns attack patterns and generalizes to variants
-- Better detection of novel/mutated attacks
-
-#### 5. **CAN-Specific Feature Engineering**
-
-- Features designed for CAN bus characteristics:
-  - Arbitration ID patterns
-  - Data byte entropy (detects fuzzing)
-  - Message timing anomalies (detects DoS)
-  - Payload manipulation (detects spoofing)
-
-### Performance Comparison Summary
-
-| Metric               | Suricata (CAN)           | This Model             |
-| -------------------- | ------------------------ | ---------------------- |
-| Detection Accuracy   | ~85-90% (rule-dependent) | 99.97%                 |
-| False Positive Rate  | ~5-10%                   | 0.04%                  |
-| Latency              | 100-500 μs               | < 1 μs                 |
-| Memory Usage         | 500+ MB                  | < 10 MB                |
-| New Attack Detection | Manual rule updates      | Automatic (retraining) |
-| Deployment           | Server/gateway           | Embedded ECU capable   |
-
-### When to Use Each
-
-| Use Case                      | Recommended Tool      |
-| ----------------------------- | --------------------- |
-| Enterprise network security   | Suricata              |
-| In-vehicle CAN bus protection | **This ML Model**     |
-| Automotive gateway monitoring | **This ML Model**     |
-| Mixed IT/OT environments      | Suricata + This Model |
+---
 
 ## Prerequisites
 
