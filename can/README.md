@@ -209,6 +209,84 @@ All classes achieve an AUC close to 1.0, indicating excellent separability betwe
 
 ---
 
+---
+
+## 7. Why Not Blockchain?
+
+A common question is: _"Why not use blockchain for CAN bus security?"_
+
+We implemented a **proof-of-concept blockchain** to demonstrate empirically why it's unsuitable for real-time automotive IDS.
+
+### The Problem: Latency
+
+| Method               | Avg Latency  | Meets Real-Time | Suitable |
+| :------------------- | :----------- | :-------------- | :------- |
+| **ML-IDS (Ours)**    | **0.031 ms** | ✅ YES          | ✅ YES   |
+| **SecOC (Industry)** | **0.005 ms** | ✅ YES          | ✅ YES   |
+| **Blockchain (PoW)** | **83.7 ms**  | ❌ NO           | ❌ NO    |
+
+CAN frames arrive every **0.5 ms** (2000 frames/sec). Blockchain verification takes **83+ ms** per batch — creating a **16.7x backlog** where the IDS is always analyzing stale data from seconds ago.
+
+### Difficulty Scaling (Exponential)
+
+![Blockchain Difficulty Scaling](outputs/blockchain_difficulty_scaling.png)
+
+As blockchain difficulty increases for better security, latency grows **exponentially**:
+
+- Difficulty 2: ~6.5 ms
+- Difficulty 3: ~93 ms
+- Difficulty 4: ~1047 ms (1+ second!)
+
+### Head-to-Head Comparison
+
+![Blockchain Failure Proof](outputs/blockchain_failure_proof.png)
+
+The visualization shows:
+
+1. **Latency Comparison (Log Scale)** - ML-IDS and SecOC stay well below deadlines; blockchain exceeds by 10x
+2. **Total Processing Time** - Blockchain takes 8+ seconds for what ML-IDS does in 0.03 seconds
+3. **Latency Distribution** - ML-IDS has tight, predictable latency; blockchain is highly variable
+4. **Summary Table** - Quantitative proof of blockchain inadequacy
+
+### Safety Implications
+
+**Scenario: Emergency Braking**
+
+- Obstacle detected at T=0
+- Blockchain verification completes at T=84ms
+- At 60 mph, car has traveled **2.2 meters**
+- **RESULT: COLLISION** (brake signal arrived too late)
+
+### Conclusion
+
+Blockchain is **fundamentally incompatible** with real-time CAN bus requirements because:
+
+1. **Proof-of-Work latency** (10-1000+ ms) exceeds frame intervals (0.5 ms)
+2. **Backlog accumulation** means always analyzing outdated data
+3. **Security-speed tradeoff** — lower difficulty = faster but less secure
+4. **100% CPU usage** leaves no resources for vehicle control
+
+**The Right Tools:**
+
+- ✅ **ML-based IDS** (this project) for real-time behavioral detection
+- ✅ **SecOC/HMAC** for lightweight cryptographic authentication
+- ❌ **Blockchain** — reserve for non-real-time tasks (OTA updates, audit logs)
+
+### Implementation Files
+
+| File                             | Description                           |
+| -------------------------------- | ------------------------------------- |
+| `code/blockchain_demo.py`        | Blockchain PoW + SecOC implementation |
+| `code/eval_blockchain_vs_can.py` | Head-to-head evaluation script        |
+
+Run the evaluation yourself:
+
+```bash
+python3 code/eval_blockchain_vs_can.py
+```
+
+---
+
 ## Prerequisites
 
 - Python 3.x
