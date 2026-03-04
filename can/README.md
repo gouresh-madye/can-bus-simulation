@@ -46,14 +46,33 @@ Each CSV contains CAN frames with: `timestamp`, `CAN ID`, `DLC`, `8 data bytes`,
 
 ## Model Architecture
 
+The live IDS simulation uses **stateful temporal features** as per INSTRUCTIONS.md:
+
 ```
 SimpleNN: Fully Connected Neural Network
-├─ Input Layer (18 features)
-├─ Linear(18 → 128) + ReLU + Dropout(0.5)
+├─ Input Layer (19 stateful features)
+├─ Linear(19 → 128) + ReLU + Dropout(0.5)
 ├─ Linear(128 → 64) + ReLU + Dropout(0.5)
 ├─ Linear(64 → 32) + ReLU + Dropout(0.3)
 └─ Linear(32 → 5 classes)
 ```
+
+### Stateful Feature Vector (19 features)
+
+| Feature         | Description                              |
+| --------------- | ---------------------------------------- |
+| arb_id          | Arbitration ID                           |
+| dlc             | Data Length Code                         |
+| byte_0..byte_7  | 8 normalized data bytes (0-1)            |
+| delta_t_id      | Time since last frame with same ID (ms)  |
+| delta_t_global  | Time since last frame globally (ms)      |
+| count_id_window | Count of same ID in 200ms sliding window |
+| ratio_id_total  | Ratio of this ID to total frames         |
+| ema[id]         | Exponential moving average of delta_t_id |
+| var[id]         | Moving variance of delta_t_id            |
+| sum_bytes       | Sum of all data bytes                    |
+| mean_bytes      | Mean of data bytes                       |
+| var_bytes       | Variance of data bytes                   |
 
 ### Why This Architecture Works Well
 
@@ -211,7 +230,20 @@ The model processes frames **100x faster** than the CAN bus can transmit them, e
 
 ## Training the Model
 
-If you need to retrain the model:
+For the live IDS simulation, use the **stateful model training**:
+
+```bash
+cd code
+python3 train_model_stateful.py
+```
+
+This trains a model with temporal features that track:
+
+- Timing patterns between frames (delta_t_id, delta_t_global)
+- Frequency patterns (count_id_window, ratio_id_total)
+- Statistical patterns (EMA, variance)
+
+**Alternative:** For stateless features (original approach):
 
 1. Build features from the dataset (with balanced sampling):
 
@@ -299,16 +331,19 @@ Options:
 
 ## Components
 
-| File                   | Description                                             |
-| ---------------------- | ------------------------------------------------------- |
-| `feature_extractor.py` | Extracts 18 stateless features from CAN frames          |
-| `ids_server.py`        | TCP server for frame processing, inference, and logging |
-| `normal_generator.py`  | Generates normal CAN traffic with CLI options           |
-| `attack_generator.py`  | Generates attack traffic with CLI options               |
-| `data_parser.py`       | Parses CSV/TXT data files with proper label separation  |
-| `build_features.py`    | Builds balanced training features and labels            |
-| `train_model.py`       | Trains the PyTorch neural network model                 |
-| `eval_model.py`        | Evaluates model with detailed metrics                   |
+| File                      | Description                                             |
+| ------------------------- | ------------------------------------------------------- |
+| `feature_extractor.py`    | Extracts stateful (19) and stateless (18) features      |
+| `ids_server.py`           | TCP server for frame processing, inference, and logging |
+| `ids_server_live.py`      | Live IDS server with automatic ECU traffic generation   |
+| `train_model_stateful.py` | **Recommended:** Stateful training from INSTRUCTIONS.md |
+| `train_model_enhanced.py` | Enhanced training with synthetic ECU/attack patterns    |
+| `normal_generator.py`     | Generates normal CAN traffic with CLI options           |
+| `attack_generator.py`     | Generates attack traffic with CLI options               |
+| `data_parser.py`          | Parses CSV/TXT data files with proper label separation  |
+| `build_features.py`       | Builds balanced training features and labels            |
+| `train_model.py`          | Trains the PyTorch neural network model                 |
+| `eval_model.py`           | Evaluates model with detailed metrics                   |
 
 ## Testing
 
@@ -332,3 +367,252 @@ Check `logs/ids_log.csv` for results.
 - The system simulates real-time processing but may run faster/slower based on your machine.
 - Ensure the IDS server is running before starting generators.
 - For production, adjust ports, hosts, and performance optimizations as needed.
+
+---
+
+## Live IDS Simulation (Realistic CAN Bus Environment)
+
+The system includes a **live IDS simulation** that behaves like a realistic CAN bus environment where:
+
+- Normal traffic flows automatically (no manual scripts needed)
+- Attack scripts inject real malicious traffic patterns
+- The IDS detects attacks **from traffic behavior**, not command flags
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   IDS SERVER (Terminal 1)                    │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   ┌─────────────────┐      ┌──────────────────────────┐    │
+│   │  ECU Simulator  │      │    TCP Attack Receiver   │    │
+│   │ (Auto Normal    │      │    (Port 9999)           │    │
+│   │  Traffic)       │      └────────────┬─────────────┘    │
+│   └────────┬────────┘                   │                  │
+│            │                            │                  │
+│            └──────────┬─────────────────┘                  │
+│                       ▼                                     │
+│              ┌────────────────┐                             │
+│              │  Frame Queue   │                             │
+│              └───────┬────────┘                             │
+│                      ▼                                      │
+│              ┌────────────────┐                             │
+│              │  ML Classifier │ ◄── best_model.pt          │
+│              │  (Detection)   │                             │
+│              └───────┬────────┘                             │
+│                      ▼                                      │
+│              ┌────────────────┐                             │
+│              │  Logging &     │                             │
+│              │  Alert Display │                             │
+│              └────────────────┘                             │
+└─────────────────────────────────────────────────────────────┘
+                        ▲
+                        │ TCP Connections
+        ┌───────────────┼───────────────┐
+        │               │               │
+   ┌────┴────┐    ┌────┴────┐    ┌────┴────┐
+   │ DoS     │    │ Fuzzy   │    │ Spoof   │
+   │ Attack  │    │ Attack  │    │ Attack  │
+   │(Term 2) │    │(Term 3) │    │(Term 4) │
+   └─────────┘    └─────────┘    └─────────┘
+```
+
+### Quick Start (Live Simulation)
+
+**Terminal 1 - Start IDS Server (with auto-generated normal traffic):**
+
+```bash
+cd code
+python3 ids_server_live.py
+```
+
+The server will:
+
+- Automatically start 8 simulated ECUs generating normal traffic
+- Listen on port 9999 for attack connections
+- Classify all frames in real-time
+- Display attack alerts prominently
+
+**Terminal 2 - Inject DoS Attack:**
+
+```bash
+cd code
+python3 attacks/attack_dos.py --duration 10
+```
+
+**Terminal 3 - Inject Fuzzy Attack:**
+
+```bash
+cd code
+python3 attacks/attack_fuzzy.py --duration 10
+```
+
+**Terminal 4 - Inject RPM Spoofing:**
+
+```bash
+cd code
+python3 attacks/attack_rpm_spoof.py --mode spike --duration 10
+```
+
+**Terminal 5 - Inject Gear Spoofing:**
+
+```bash
+cd code
+python3 attacks/attack_gear_spoof.py --mode rapid --duration 10
+```
+
+### Simulated ECU Traffic
+
+The IDS server automatically simulates 8 ECUs with realistic timing:
+
+| ECU            | CAN ID | Period | Description        |
+| -------------- | ------ | ------ | ------------------ |
+| Engine         | 0x100  | 10 ms  | Engine parameters  |
+| Transmission   | 0x200  | 20 ms  | Transmission state |
+| SpeedSensor    | 0x300  | 50 ms  | Vehicle speed      |
+| Dashboard      | 0x400  | 100 ms | Dashboard info     |
+| BrakeSensor    | 0x350  | 25 ms  | Brake status       |
+| SteeringSensor | 0x450  | 30 ms  | Steering angle     |
+| RPMGauge       | 0x316  | 20 ms  | Engine RPM         |
+| GearIndicator  | 0x43f  | 50 ms  | Current gear       |
+
+This creates realistic periodic behavior where:
+
+- **DoS** → Detected by high-frequency ID 0x000 frames
+- **Fuzzy** → Detected by random IDs and high-entropy payloads
+- **RPM Spoof** → Detected by abnormal values on ID 0x316
+- **Gear Spoof** → Detected by invalid state transitions on ID 0x43F
+
+### Attack Scripts
+
+#### DoS Attack (`attacks/attack_dos.py`)
+
+Floods the bus with CAN ID 0x000 at high frequency.
+
+```bash
+python3 attacks/attack_dos.py --duration 10 --interval 0.5
+```
+
+| Option             | Description               | Default   |
+| ------------------ | ------------------------- | --------- |
+| `--host`, `-H`     | IDS server host           | localhost |
+| `--port`, `-p`     | IDS server port           | 9999      |
+| `--duration`, `-d` | Attack duration (seconds) | 10        |
+| `--interval`, `-t` | Frame interval (ms)       | 0.5       |
+
+#### Fuzzy Attack (`attacks/attack_fuzzy.py`)
+
+Sends frames with random IDs and random payloads.
+
+```bash
+python3 attacks/attack_fuzzy.py --duration 10 --min-interval 1 --max-interval 50
+```
+
+| Option             | Description                 | Default |
+| ------------------ | --------------------------- | ------- |
+| `--duration`, `-d` | Attack duration (seconds)   | 10      |
+| `--min-interval`   | Minimum frame interval (ms) | 1       |
+| `--max-interval`   | Maximum frame interval (ms) | 50      |
+
+#### RPM Spoofing (`attacks/attack_rpm_spoof.py`)
+
+Injects malicious RPM values on CAN ID 0x316.
+
+```bash
+python3 attacks/attack_rpm_spoof.py --mode spike --duration 10
+```
+
+| Mode        | Description                          |
+| ----------- | ------------------------------------ |
+| `spike`     | Sudden extreme RPM jumps (0 ↔ 12000) |
+| `redline`   | Constant dangerous RPM (8000-12000)  |
+| `oscillate` | Rapidly fluctuating values           |
+
+#### Gear Spoofing (`attacks/attack_gear_spoof.py`)
+
+Injects invalid gear states on CAN ID 0x43F.
+
+```bash
+python3 attacks/attack_gear_spoof.py --mode rapid --duration 10
+```
+
+| Mode      | Description                          |
+| --------- | ------------------------------------ |
+| `random`  | Random gear values including invalid |
+| `reverse` | Constant reverse signal              |
+| `rapid`   | Impossible gear shift sequences      |
+
+### Live File Structure
+
+```
+can/
+├── code/
+│   ├── ids_server_live.py      # Live IDS server (run this!)
+│   ├── train_model_stateful.py # Stateful training (INSTRUCTIONS.md)
+│   ├── train_model_enhanced.py # Enhanced training for live sim
+│   ├── ids_server.py           # Original TCP server
+│   ├── attacks/                # Attack injection scripts
+│   │   ├── __init__.py
+│   │   ├── attack_dos.py
+│   │   ├── attack_fuzzy.py
+│   │   ├── attack_rpm_spoof.py
+│   │   └── attack_gear_spoof.py
+│   └── ... (other files)
+├── models/
+│   └── best_model.pt
+├── outputs/
+│   ├── scaler.pkl              # Feature scaler
+│   └── model_config.pkl        # Model config (stateful)
+├── logs/
+│   └── ids_live_*.csv          # Detection logs
+└── ...
+```
+
+### Training Model for Live Simulation
+
+The **stateful training script** uses temporal features from INSTRUCTIONS.md:
+
+```bash
+cd code
+python3 train_model_stateful.py
+```
+
+This script:
+
+1. Generates realistic ECU traffic sequences with proper timing
+2. Creates attack sequences embedded in normal traffic
+3. Extracts **stateful temporal features** (delta_t_id, count_id_window, EMA, etc.)
+4. Trains a model that detects attacks from timing anomalies
+
+**Training Results:**
+
+```
+Total samples: 596,399
+Feature dimensions: 19 (stateful)
+Best Validation Accuracy: 99.99%
+```
+
+The model learns to detect:
+
+- **DoS** → Abnormal delta_t_id (~0ms), high count_id_window
+- **Fuzzing** → Random IDs, high variance in timing
+- **RPM Spoof** → Abnormal frequency on ID 0x316
+- **Gear Spoof** → Abnormal frequency on ID 0x43F
+
+The trained model is saved to:
+
+- `models/best_model.pt` - Model weights
+- `outputs/scaler.pkl` - Feature scaler
+- `outputs/model_config.pkl` - Model configuration (feature_type: stateful)
+
+### Key Differences from Original System
+
+| Aspect           | Original (`ids_server.py`)    | Live (`ids_server_live.py`)       |
+| ---------------- | ----------------------------- | --------------------------------- |
+| Normal Traffic   | Manual: `normal_generator.py` | Automatic: Built-in ECU sim       |
+| Attack Injection | `--type DoS` flag             | Real attack patterns              |
+| Detection Basis  | Command metadata              | Traffic behavior + timing         |
+| Features         | Stateless (18)                | Stateful temporal (19)            |
+| Multi-Attack     | Sequential                    | Simultaneous (multiple terminals) |
+| Realism          | Dataset replay                | Live ECU simulation               |
