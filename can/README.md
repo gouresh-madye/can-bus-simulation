@@ -240,7 +240,7 @@ For the live IDS simulation, use the **stateful model training**:
 
 ```bash
 cd code
-python3 train_model_stateful.py
+python3 code/train_model_stateful.py
 ```
 
 This trains a model with temporal features that track:
@@ -444,28 +444,28 @@ The server will:
 
 ```bash
 cd code
-python3 attacks/attack_dos.py --duration 10
+python3 code/attacks/attack_dos.py --duration 10
 ```
 
 **Terminal 3 - Inject Fuzzy Attack:**
 
 ```bash
 cd code
-python3 attacks/attack_fuzzy.py --duration 10
+python3 code/attacks/attack_fuzzy.py --duration 10
 ```
 
 **Terminal 4 - Inject RPM Spoofing:**
 
 ```bash
 cd code
-python3 attacks/attack_rpm_spoof.py --mode spike --duration 10
+python3 code/attacks/attack_rpm_spoof.py --mode spike --duration 10
 ```
 
 **Terminal 5 - Inject Gear Spoofing:**
 
 ```bash
 cd code
-python3 attacks/attack_gear_spoof.py --mode rapid --duration 10
+python3 code/attacks/attack_gear_spoof.py --mode rapid --duration 10
 ```
 
 ### Simulated ECU Traffic
@@ -492,12 +492,12 @@ This creates realistic periodic behavior where:
 
 ### Attack Scripts
 
-#### DoS Attack (`attacks/attack_dos.py`)
+#### DoS Attack (`code/attacks/attack_dos.py`)
 
 Floods the bus with CAN ID 0x000 at high frequency.
 
 ```bash
-python3 attacks/attack_dos.py --duration 10 --interval 0.5
+python3 code/attacks/attack_dos.py --duration 10 --interval 0.5
 ```
 
 | Option             | Description               | Default   |
@@ -507,12 +507,12 @@ python3 attacks/attack_dos.py --duration 10 --interval 0.5
 | `--duration`, `-d` | Attack duration (seconds) | 10        |
 | `--interval`, `-t` | Frame interval (ms)       | 0.5       |
 
-#### Fuzzy Attack (`attacks/attack_fuzzy.py`)
+#### Fuzzy Attack (`code/attacks/attack_fuzzy.py`)
 
 Sends frames with random IDs and random payloads.
 
 ```bash
-python3 attacks/attack_fuzzy.py --duration 10 --min-interval 1 --max-interval 50
+python3 code/attacks/attack_fuzzy.py --duration 10 --min-interval 1 --max-interval 50
 ```
 
 | Option             | Description                 | Default |
